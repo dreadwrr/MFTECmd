@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Help;
-using System.CommandLine.NamingConventionBinder;
+using System.CommandLine.Invocation;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -32,7 +32,7 @@ using Usn;
 using Attribute = MFT.Attributes.Attribute;
 using CsvWriter = CsvHelper.CsvWriter;
 
-#if !NET6_0_OR_GREATER
+#if !NET9_0_OR_GREATER
 using Directory = Alphaleonis.Win32.Filesystem.Directory;
 using File = Alphaleonis.Win32.Filesystem.File;
 using Path = Alphaleonis.Win32.Filesystem.Path;
@@ -45,7 +45,7 @@ public class Program
     private static Mft _mft;
 
     private static readonly string Header =
-        $"MFTECmd version {Assembly.GetExecutingAssembly().GetName().Version}" +
+        $"MFTECmd version {Assembly.GetExecutingAssembly().GetName().Version.ToString(3)}" +
         "\r\n\r\nAuthor: Eric Zimmerman (saericzimmerman@gmail.com)" +
         "\r\nhttps://github.com/EricZimmerman/MFTECmd";
 
@@ -76,126 +76,214 @@ public class Program
     {
         ExceptionlessClient.Default.Startup("88KHFwswzxfnYGejAlsVDao47ySGliI6vFbQPt9C");
 
+        var fOpt = new Option<string>("-f")
+        {
+            Description = "File to process ($MFT | $J | $Boot | $SDS | $I30). Required"
+        };
+        
+        var mOpt = new Option<string>("-m")
+        {
+            Description = "$MFT file to use when -f points to a $J file (Use this to resolve parent path in $J CSV output)"
+        };
+        var csvOpt = new Option<string>(
+            "--csv")
+        {
+            Description = "Directory to save CSV formatted results to. Be sure to include the full path in double quotes. This or --json required unless --de or --body is specified"
+        
+        };
+
+        var csvfOpt = new Option<string>(
+            "--csvf")
+        {
+            Description   = "File name to save CSV formatted results to. When present, overrides default name\r\n"
+        };
+        
+        var jsonOpt = new Option<string>(
+            "--json")
+        {
+            Description = "Directory to save JSON formatted results to. Be sure to include the full path in double quotes. This or --csv required unless --de or --body is specified"
+        
+        };
+
+        var jsonfOpt = new Option<string>(
+            "--jsonf")
+        {
+            Description   = "File name to save JSON formatted results to. When present, overrides default name"
+        };
+        var bodyOpt = new Option<string>(
+            "--body")
+        {
+            Description = "Directory to save bodyfile formatted results to. --bdl is also required when using this option"
+        
+        };
+
+        var bodyfOpt = new Option<string>(
+            "--bodyf")
+        {
+            Description   = "File name to save body formatted results to. When present, overrides default name"
+        };
+        
+        var bdlOpt = new Option<string>(
+            "--bdl")
+        {
+            Description   = "Drive letter (C, D, etc.) to use with bodyfile. Only the drive letter itself should be provided"
+        };
+        
+        var blfOpt = new Option<bool>(
+            "--blf")
+        {
+            Description   = "When true, use LF vs CRLF for newlines",
+            DefaultValueFactory = _ => false
+        };
+        
+        var ddOpt = new Option<string>(
+            "--dd")
+        {
+            Description   = "Directory to save exported $MFT FILE record. --do is also required when using this option"
+        };
+        var doOpt = new Option<string>(
+            "--do")
+        {
+            Description   = "Offset of the $MFT FILE record to dump as decimal or hex. Ex: 5120 or 0x1400 Use --de or --debug to see offsets"
+        };
+        var deOpt = new Option<string>(
+            "--de")
+        {
+            Description   = "Dump full details for $MFT entry/sequence #. Format is 'Entry' or 'Entry-Seq' as decimal or hex. Example: 5, 624-5 or 0x270-0x5."
+        };
+        var drOpt = new Option<bool>(
+            "--dr")
+        {
+            Description   = "When true, dump $MFT resident files to dir specified by --csv or --json, in 'Resident' subdirectory. Files will be named '<EntryNumber>-<SequenceNumber>-<AttributeNumber>_<FileName>.bin'"
+        };
+        
+        var flsOpt = new Option<bool>(
+            "--fls")
+        {
+            Description   = "When true, displays contents of directory from $MFT specified by --de. Ignored when --de points to a file",
+            DefaultValueFactory = _ => false
+        };
+        var dsOpt = new Option<string>(
+            "--ds")
+        {
+            Description   = "Dump full details for Security Id from $SDS as decimal or hex. Example: 624 or 0x270\r\n"
+        };
+        
+        var dtOpt = new Option<string>(
+            "--dt"){
+            Description =        "The custom date/time format to use when displaying time stamps. See https://goo.gl/CNVq0k for options",
+            DefaultValueFactory = _ => "yyyy-MM-dd HH:mm:ss.fffffff"
+        };
+        
+        
+        var snOpt = new Option<bool>("--sn")
+        {
+            Description = "Include DOS file name types in $MFT output",
+            DefaultValueFactory = _ => false
+        };
+        
+        var flOpt = new Option<bool>("--fl")
+        {
+            Description = "Generate condensed file listing of parsed $MFT contents. Requires --csv",
+            DefaultValueFactory = _ => false
+        };
+        
+        var atOpt = new Option<bool>("--at")
+        {
+            Description = "When true, include all timestamps from 0x30 attribute vs only when they differ from 0x10 in the $MFT",
+            DefaultValueFactory = _ => false
+        };
+        
+        var rsOpt = new Option<bool>("--rs")
+        {
+            Description = "When true, recover slack space from FILE records when processing $MFT files. This option has no effect for $I30 files",
+            DefaultValueFactory = _ => false
+        };
+        
+        var vssOpt = new Option<bool>("--vss")
+        {
+            Description = "Process all Volume Shadow Copies that exist on drive specified by -f",
+            DefaultValueFactory = _ => false
+        };
+        var dedupeOpt = new Option<bool>("--dedupe")
+        {
+            Description = "Deduplicate -f & VSCs based on SHA-1. First file found wins",
+            DefaultValueFactory = _ => false
+        };
+        
+        var irOpt = new Option<bool>("--ir")
+        {
+            Description = "Include resident data in JSON/CSV output",
+            DefaultValueFactory = _ => false
+        };
+        
+        var reOpt = new Option<string>(
+            "--re")
+        {
+            Description   = "Comma-separated list of extensions to include for resident data (e.g., '.txt,.ps1,.bat'). If omitted, includes all"
+        };
+        
+        var rmOpt = new Option<int>(
+            "--rm")
+        {
+            Description   = "Maximum size in bytes for resident data to include (max: 1024000)",
+            DefaultValueFactory = _ => 1024
+        };
+        
+        var debugOpt = new Option<bool>("--debug")
+        {
+            Description = "Show debug information during processing",
+            DefaultValueFactory = _ => false
+        };
+        var traceOpt = new Option<bool>("--trace")
+        {
+            Description = "Show trace information during processing",
+            DefaultValueFactory = _ => false
+        };
 
         _rootCommand = new RootCommand
         {
-            new Option<string>(
-                "-f",
-                "File to process ($MFT | $J | $Boot | $SDS | $I30). Required"),
-
-            new Option<string>(
-                "-m",
-                "$MFT file to use when -f points to a $J file (Use this to resolve parent path in $J CSV output)\r\n"),
-
-            new Option<string>(
-                "--json",
-                "Directory to save JSON formatted results to. This or --csv required unless --de or --body is specified"),
-
-            new Option<string>(
-                "--jsonf",
-                "File name to save JSON formatted results to. When present, overrides default name"),
-
-            new Option<string>(
-                "--csv",
-                "Directory to save CSV formatted results to. This or --json required unless --de or --body is specified"),
-
-            new Option<string>(
-                "--csvf",
-                "File name to save CSV formatted results to. When present, overrides default name\r\n"),
-
-            new Option<string>(
-                "--body",
-                "Directory to save bodyfile formatted results to. --bdl is also required when using this option"),
-
-            new Option<string>(
-                "--bodyf",
-                "File name to save body formatted results to. When present, overrides default name"),
-
-            new Option<string>(
-                "--bdl",
-                "Drive letter (C, D, etc.) to use with bodyfile. Only the drive letter itself should be provided"),
-
-            new Option<bool>(
-                "--blf",
-                () => false,
-                "When true, use LF vs CRLF for newlines"),
-
-            new Option<string>(
-                "--dd",
-                "Directory to save exported $MFT FILE record. --do is also required when using this option"),
-
-            new Option<string>(
-                "--do",
-                "Offset of the $MFT FILE record to dump as decimal or hex. Ex: 5120 or 0x1400 Use --de or --debug to see offsets\r\n"),
-
-            new Option<string>(
-                "--de",
-                "Dump full details for $MFT entry/sequence #. Format is 'Entry' or 'Entry-Seq' as decimal or hex. Example: 5, 624-5 or 0x270-0x5."),
-
-            new Option<bool>(
-                "--dr",
-                "When true, dump $MFT resident files to dir specified by --csv or --json, in 'Resident' subdirectory. Files will be named '<EntryNumber>-<SequenceNumber>-<AttributeNumber>_<FileName>.bin'"),
-
-            new Option<bool>(
-                "--fls",
-                () => false,
-                "When true, displays contents of directory from $MFT specified by --de. Ignored when --de points to a file"),
-
-            new Option<string>(
-                "--ds",
-                "Dump full details for Security Id from $SDS as decimal or hex. Example: 624 or 0x270\r\n"),
-
-            new Option<string>(
-                "--dt",
-                () => "yyyy-MM-dd HH:mm:ss.fffffff",
-                "The custom date/time format to use when displaying time stamps. See https://goo.gl/CNVq0k for options"),
-
-            new Option<bool>(
-                "--sn",
-                () => false,
-                "Include DOS file name types in $MFT output"),
-
-            new Option<bool>(
-                "--fl",
-                () => false,
-                "Generate condensed file listing of parsed $MFT contents. Requires --csv"),
-
-            new Option<bool>(
-                "--at",
-                () => false,
-                "When true, include all timestamps from 0x30 attribute vs only when they differ from 0x10 in the $MFT"),
-            
-            new Option<bool>(
-                "--rs",
-                () => false,
-                "When true, recover slack space from FILE records when processing $MFT files. This option has no effect for $I30 files"),
-            
-            new Option<bool>(
-                "--vss",
-                () => false,
-                "Process all Volume Shadow Copies that exist on drive specified by -f"),
-
-            new Option<bool>(
-                "--dedupe",
-                () => false,
-                "Deduplicate -f & VSCs based on SHA-1. First file found wins"),
-
-            new Option<bool>(
-                "--debug",
-                () => false,
-                "Show debug information during processing"),
-
-            new Option<bool>(
-                "--trace",
-                () => false,
-                "Show trace information during processing")
+           fOpt,
+           mOpt,
+           csvOpt,
+           csvfOpt,
+           jsonOpt,
+           jsonfOpt,
+           bodyOpt,
+           bodyfOpt,
+           bdlOpt,
+           blfOpt,
+           ddOpt,
+           doOpt,
+           deOpt,
+           drOpt,
+           flsOpt,
+           dsOpt,
+           dtOpt,
+           snOpt,
+           flOpt,
+           atOpt,
+           rsOpt,
+           vssOpt,
+           dedupeOpt,
+          
+           irOpt,
+           reOpt,
+           rmOpt,
+           debugOpt,
+           traceOpt,
         };
 
         _rootCommand.Description = Header + "\r\n\r\n" + Footer;
 
-        _rootCommand.Handler = CommandHandler.Create(DoWork);
-
-        await _rootCommand.InvokeAsync(args);
+        _rootCommand.SetAction(result => DoWork(result.GetValue(fOpt), result.GetValue(mOpt), result.GetValue(jsonOpt),
+            result.GetValue(jsonfOpt), result.GetValue(csvOpt), result.GetValue(csvfOpt), result.GetValue(bodyOpt),
+            result.GetValue(bodyfOpt),result.GetValue(bdlOpt),result.GetValue(blfOpt),result.GetValue(ddOpt),result.GetValue(doOpt),
+            result.GetValue(deOpt),result.GetValue(drOpt),result.GetValue(flsOpt),result.GetValue(dsOpt),result.GetValue(dtOpt),result.GetValue(snOpt),
+            result.GetValue(flOpt),result.GetValue(atOpt),result.GetValue(rsOpt),result.GetValue(vssOpt),result.GetValue(dedupeOpt),
+            result.GetValue(debugOpt),result.GetValue(traceOpt),result.GetValue(irOpt),result.GetValue(reOpt),result.GetValue(rmOpt)));
+            
+        var foo = _rootCommand.Parse(args).InvokeAsync();
         
         Log.CloseAndFlush();
     }
@@ -232,7 +320,7 @@ public class Program
         }
     }
     
-    private static void DoWork(string f, string m, string json, string jsonf, string csv, string csvf, string body, string bodyf, string bdl, bool blf, string dd, string @do, string de, bool dr, bool fls, string ds, string dt, bool sn, bool fl, bool at, bool rs, bool vss, bool dedupe, bool debug, bool trace)
+    private static void DoWork(string f, string m, string json, string jsonf, string csv, string csvf, string body, string bodyf, string bdl, bool blf, string dd, string @do, string de, bool dr, bool fls, string ds, string dt, bool sn, bool fl, bool at, bool rs, bool vss, bool dedupe, bool debug, bool trace, bool ir, string re, int rm)
     {
         var levelSwitch = new LoggingLevelSwitch();
 
@@ -264,12 +352,9 @@ public class Program
         
         if (f.IsNullOrEmpty())
         {
-            var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-            var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
-
-            helpBld.Write(hc);
-
-            Log.Warning("-f is required. Exiting\r\n");
+            var aaa = new CustomHelpAction(new HelpAction());
+            aaa.Invoke(_rootCommand.Parse("-f is required. Exiting"));
+            
             return;
         }
 
@@ -351,12 +436,9 @@ public class Program
             case FileType.I30:
                 if (csv.IsNullOrEmpty())
                 {
-                    var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                    var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
-
-                    helpBld.Write(hc);
-
-                    Log.Warning("--csv is required. Exiting");
+                    var aaa = new CustomHelpAction(new HelpAction());
+                    aaa.Invoke(_rootCommand.Parse("--csv is required. Exiting"));
+                    
                     return;
                 }
                 
@@ -370,24 +452,20 @@ public class Program
                     body.IsNullOrEmpty() &&
                     dd.IsNullOrEmpty())
                 {
-                    var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                    var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
-
-                    helpBld.Write(hc);
-
-                    Log.Warning("--csv, --json, --body, --dd, or --de is required. Exiting");
+                    var aaa = new CustomHelpAction(new HelpAction());
+                    aaa.Invoke(_rootCommand.Parse("--csv, --json, --body, --dd, or --de is required. Exiting"));
+                    
+                
                     return;
                 }
 
                 if (body.IsNullOrEmpty() == false &&
                     bdl.IsNullOrEmpty())
                 {
-                    var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                    var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
+                    var aaa = new CustomHelpAction(new HelpAction());
+                    aaa.Invoke(_rootCommand.Parse("--bdl is required when using --body. Exiting"));
 
-                    helpBld.Write(hc);
-
-                    Log.Warning("--bdl is required when using --body. Exiting");
+                    
                     return;
                 }
 
@@ -395,12 +473,9 @@ public class Program
                 {
                     if (dd.IsNullOrEmpty())
                     {
-                        var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                        var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
+                        var aaa = new CustomHelpAction(new HelpAction());
+                        aaa.Invoke(_rootCommand.Parse("--dd option missing. Exiting"));
 
-                        helpBld.Write(hc);
-
-                        Log.Warning("--dd option missing. Exiting");
                         Console.WriteLine();
                         return;
                     }
@@ -416,12 +491,10 @@ public class Program
                 if (dd.IsNullOrEmpty() == false &&
                     @do.IsNullOrEmpty())
                 {
-                    var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                    var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
+                    var aaa = new CustomHelpAction(new HelpAction());
+                    aaa.Invoke(_rootCommand.Parse("--do is required when using --dd. Exiting"));
 
-                    helpBld.Write(hc);
-
-                    Log.Warning("--do is required when using --dd. Exiting");
+                  
                     return;
                 }
 
@@ -432,7 +505,7 @@ public class Program
                     drDir = Path.Combine(residentDirBase, "Resident");
                 }
 
-                ProcessMft(f, vss, dedupe, body, bdl, bodyf, blf, csv, csvf, json, jsonf, fl, dt, dd, @do, fls, sn, at, de,rs,drDir);
+                ProcessMft(f, vss, dedupe, body, bdl, bodyf, blf, csv, csvf, json, jsonf, fl, dt, dd, @do, fls, sn, at, de, rs, drDir, ir, re, rm);
                 break;
             case FileType.LogFile:
                 Log.Warning("$LogFile not supported yet. Exiting");
@@ -441,12 +514,9 @@ public class Program
                 if (csv.IsNullOrEmpty() && json.IsNullOrEmpty()
                    )
                 {
-                    var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                    var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
+                    var aaa = new CustomHelpAction(new HelpAction());
+                    aaa.Invoke(_rootCommand.Parse("--csv or --json is required. Exiting"));
 
-                    helpBld.Write(hc);
-
-                    Log.Warning("--csv or --json is required. Exiting");
                     return;
                 }
 
@@ -475,7 +545,7 @@ public class Program
                         drDir2 = $"{residentDirBase}\\Resident";
                     }
 
-                    ProcessMft(m, vss, dedupe, body, bdl, bodyf, blf, csv, csvf, json, jsonf, fl, dt, dd, @do, fls, sn, at, de,rs,drDir2);
+                    ProcessMft(m, vss, dedupe, body, bdl, bodyf, blf, csv, csvf, json, jsonf, fl, dt, dd, @do, fls, sn, at, de, rs, drDir2, ir, re, rm);
                 }
 
                 ProcessJ(f, vss, dedupe, csv, csvf, json, jsonf, dt);
@@ -488,12 +558,9 @@ public class Program
                     ds.IsNullOrEmpty())
 
                 {
-                    var helpBld = new HelpBuilder(LocalizationResources.Instance, Console.WindowWidth);
-                    var hc = new HelpContext(helpBld, _rootCommand, Console.Out);
+                    var aaa = new CustomHelpAction(new HelpAction());
+                    aaa.Invoke(_rootCommand.Parse("--csv or --ds is required. Exiting"));
 
-                    helpBld.Write(hc);
-
-                    Log.Warning("--csv or --ds is required. Exiting");
                     return;
                 }
 
@@ -1465,7 +1532,7 @@ public class Program
 
     
     
-    private static void ProcessMft(string file, bool vss, bool dedupe, string body, string bdl, string bodyf, bool blf, string csv, string csvf, string json, string jsonf, bool fl, string dt, string dd, string @do, bool fls, bool includeShort, bool alltimestamp, string de, bool rs, string drDir)
+    private static void ProcessMft(string file, bool vss, bool dedupe, string body, string bdl, string bodyf, bool blf, string csv, string csvf, string json, string jsonf, bool fl, string dt, string dd, string @do, bool fls, bool includeShort, bool alltimestamp, string de, bool rs, string drDir, bool includeResident, string residentExt, int residentMaxSize)
     {
         var mftFiles = new Dictionary<string, Mft>();
 
@@ -1845,8 +1912,8 @@ public class Program
                         }
                     }
                     
-                    ProcessRecords(mftFile.Value.FileRecords, includeShort, alltimestamp, bdl,drDir,mftFile.Key);
-                    ProcessRecords(mftFile.Value.FreeFileRecords, includeShort, alltimestamp, bdl,drDir,mftFile.Key);
+                    ProcessRecords(mftFile.Value.FileRecords, includeShort, alltimestamp, bdl,drDir,mftFile.Key, includeResident, residentExt, residentMaxSize);
+                    ProcessRecords(mftFile.Value.FreeFileRecords, includeShort, alltimestamp, bdl,drDir,mftFile.Key, includeResident, residentExt, residentMaxSize);
                 }
                 catch (Exception ex)
                 {
@@ -2697,7 +2764,7 @@ public class Program
                 {
                     var rawFiles = Helper.GetRawFiles(ll);
 
-                    rawFiles.First().FileStream.Read(buff, 0, 50);
+                    rawFiles.First().FileStream.ReadExactly(buff, 0, 50);
                 }
                 catch (Exception e)
                 {
@@ -2791,7 +2858,7 @@ public class Program
         return FileType.Unknown;
     }
 
-    private static void ProcessRecords(Dictionary<string, FileRecord> records, bool includeShort, bool alltimestamp, string bdl, string drDumpDir, string mftFilePath)
+    private static void ProcessRecords(Dictionary<string, FileRecord> records, bool includeShort, bool alltimestamp, string bdl, string drDumpDir, string mftFilePath, bool includeResident, string residentExt, int residentMaxSize)
     {
         
         foreach (var fr in records)
@@ -2827,7 +2894,7 @@ public class Program
                     continue;
                 }
 
-                var mftr = GetCsvData(fr.Value, fn, null, alltimestamp, mftFilePath);
+                var mftr = GetCsvData(fr.Value, fn, null, alltimestamp, mftFilePath, includeResident, residentExt, residentMaxSize);
 
                 var ads = fr.Value.GetAlternateDataStreams();
 
@@ -2882,7 +2949,7 @@ public class Program
 
                 foreach (var adsInfo in ads)
                 {
-                    var adsRecord = GetCsvData(fr.Value, fn, adsInfo, alltimestamp, mftFilePath);
+                    var adsRecord = GetCsvData(fr.Value, fn, adsInfo, alltimestamp, mftFilePath, includeResident, residentExt, residentMaxSize);
                     adsRecord.IsAds = true;
                     adsRecord.OtherAttributeId = adsInfo.AttributeId;
                     _csvWriter?.WriteRecord(adsRecord);
@@ -3016,7 +3083,79 @@ public class Program
         return b;
     }
 
-    public static MFTRecordOut GetCsvData(FileRecord fr, FileName fn, AdsInfo adsinfo, bool alltimestamp, string mftFilePath)
+    private static void PopulateResidentData(MFTRecordOut mftr, FileRecord fr, string residentExt, int residentMaxSize)
+    {
+        if (mftr.FileSize > (ulong)residentMaxSize)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(residentExt))
+        {
+            var allowedExtensions = new HashSet<string>(
+                residentExt.Split(',').Select(e => e.Trim().ToLowerInvariant()),
+                StringComparer.OrdinalIgnoreCase
+            );
+
+            if (!string.IsNullOrEmpty(mftr.Extension) && 
+                !allowedExtensions.Contains(mftr.Extension.ToLowerInvariant()))
+            {
+                return;
+            }
+        }
+
+        var dataAttrs = fr.Attributes.Where(t => 
+            t.AttributeType == AttributeType.Data && t.IsResident).ToList();
+
+        foreach (var attr in dataAttrs)
+        {
+            var dataAttr = attr as Data;
+            if (dataAttr?.ResidentData?.Data != null)
+            {
+                var data = dataAttr.ResidentData.Data;
+
+                mftr.ResidentDataBase64 = Convert.ToBase64String(data);
+
+                mftr.ResidentDataHex = BitConverter.ToString(data);
+
+                try
+                {
+                    var text = Encoding.UTF8.GetString(data);
+                    if (text.All(c => char.IsControl(c) || char.IsWhiteSpace(c) || 
+                        (c >= 32 && c <= 126) || c == '\r' || c == '\n' || c == '\t'))
+                    {
+                        mftr.ResidentDataASCII = text;
+                    }
+                }
+                catch
+                {
+                }
+
+                break;
+            }
+        }
+    }
+    
+    private class CustomHelpAction : SynchronousCommandLineAction
+    {
+        private readonly HelpAction _defaultHelp;
+
+        public CustomHelpAction(HelpAction action)
+        {
+            _defaultHelp = action;
+        }
+
+        public override int Invoke(ParseResult parseResult)
+        {
+            var result = _defaultHelp.Invoke(parseResult);
+
+            Log.Warning("{Msg}", string.Join(" ",parseResult.Tokens));
+
+            return result;
+        }
+    }
+
+    public static MFTRecordOut GetCsvData(FileRecord fr, FileName fn, AdsInfo adsinfo, bool alltimestamp, string mftFilePath, bool includeResident, string residentExt, int residentMaxSize)
     {
         var mftr = new MFTRecordOut
         {
@@ -3157,6 +3296,11 @@ public class Program
             mftr.LastModified0x10 = fn.FileInfo.ContentModifiedOn;
             mftr.LastRecordChange0x10 = fn.FileInfo.RecordModifiedOn;
             mftr.LastAccess0x10 = fn.FileInfo.LastAccessedOn;
+        }
+
+        if (includeResident && adsinfo == null)
+        {
+            PopulateResidentData(mftr, fr, residentExt, residentMaxSize);
         }
 
         return mftr;
